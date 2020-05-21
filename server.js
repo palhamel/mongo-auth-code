@@ -3,8 +3,7 @@ import bodyParser from "body-parser";
 import cors from "cors";
 import mongoose from "mongoose";
 import crypto from "crypto";
-import bcrypt from 'bcrypt-nodejs'
-
+import bcrypt from "bcrypt-nodejs";
 
 // Mongoose & Database setup:
 const mongoUrl =
@@ -34,14 +33,17 @@ const User = mongoose.model("User", {
   },
 });
 
+// middleware to authenticate user:
 
-
-
-
-
-
-
-
+const authenticateUser = async (req, res, next) => {
+  const user = await User.findOne({ accessToken: req.header("Authorization") });
+  if (user) {
+    req.user = user;
+    next();
+  } else {
+    res.status(401).json({ loggedOut: true });
+  }
+};
 
 // Defines the port the app will run on. Defaults to 8080, but can be
 // overridden when starting the server. For example:
@@ -59,11 +61,42 @@ app.get("/", (req, res) => {
   res.send("Hello world");
 });
 
-// supersecret endpoint
-// restrict access
 
+// add user endpoint - the registration endpoint:
+// POST - http://localhost:8080/users
+app.post("/users", async (req, res) => {
+  try {
+    const { name, email, password } = req.body;
+    // Do not store plain text passwords - use bcrypt:
+    const user = new User({ name, email, password: bcrypt.hashSync(password) });
+    user.save();
+    res.status(201).json({ id: user._id, accessToken: user.accessToken });
+  } catch (err) {
+    res
+      .status(400)
+      .json({ message: "Could not create user", errors: err.errors });
+  }
+});
+
+// supersecret endpoint - the protected endpoint
+// restrict access - - using authenticateUser:
+// GET - http://localhost:8080/secrets
+app.get("/secrets", authenticateUser);
 app.get("/secrets", (req, res) => {
-  res.json({ secret: "This is a super secret message" });
+  // can do anything here, but we just put in a message
+  res.json({ secret: "All ok! - This is a super secret message" });
+});
+
+
+// endpoint to login a User - and check email and password:
+// POST - http://localhost:8080/sessions
+app.post("/sessions", async (req, res) => {
+  const user = await User.findOne({ email: req.body.email });
+  if (user && bcrypt.compareSync(req.body.password, user.password)) {
+    res.json({ userId: user._id, accessToken: user.accessToken });
+  } else {
+    res.json({ notFound: true });
+  }
 });
 
 // Start the server
